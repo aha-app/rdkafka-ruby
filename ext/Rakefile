@@ -13,7 +13,8 @@ task :default => :clean do
     ENV["CPPFLAGS"] = "-I#{homebrew_prefix}/opt/openssl/include" unless ENV["CPPFLAGS"]
     ENV["LDFLAGS"] = "-L#{homebrew_prefix}/opt/openssl/lib" unless ENV["LDFLAGS"]
   else
-    ENV["CPPFLAGS"] = "-lssl -lcrypto -lxml2"
+    ENV["WITH_SSL"] = "y"
+    ENV["CPPFLAGS"] = "#{ENV["CPP_FLAGS"]} -lssl -lcrypto -lxml2 -lcurl -DIOV_MAX=1024 -I/usr/include/libxml2/ -I/usr/include/openssl"
   end
 
   recipe.files << {
