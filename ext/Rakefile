@@ -12,6 +12,8 @@ task :default => :clean do
   if recipe.host&.include?("darwin") && system("which brew &> /dev/null") && Dir.exist?("#{homebrew_prefix = %x(brew --prefix).strip}/opt/openssl")
     ENV["CPPFLAGS"] = "-I#{homebrew_prefix}/opt/openssl/include" unless ENV["CPPFLAGS"]
     ENV["LDFLAGS"] = "-L#{homebrew_prefix}/opt/openssl/lib" unless ENV["LDFLAGS"]
+  else
+    ENV["CPPFLAGS"] = "-lssl -lcrypto -lxml2"
   end
 
   recipe.files << {
