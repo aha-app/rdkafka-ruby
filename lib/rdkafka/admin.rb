@@ -164,9 +164,132 @@ module Rdkafka
       delete_topic_handle
     end
 
+    # Incrementally alter the configuration for a specific topic
+    #
+    # @raise [RdkafkaError] When the topic name or configuration is invalid
+    #
+    # @return [AlterConfigHandle] handle that can be used to wait for the result
+    def incremental_alter_config(topic_name, topic_config)
+      describe_config_handle = describe_config(topic_name)
+      describe_config_handle.wait
+
+      config_resource_ptr = describe_config_handle[:resource]
+
+      topic_config.each do |key, value|
+        Rdkafka::Bindings.rd_kafka_ConfigResource_set_config(
+          config_resource_ptr,
+          key.to_s,
+          value.to_s
+        )
+      end
+
+      # Note that rd_kafka_DescribeConfigs can retrieve multiple configs
+      pointer_array = [config_resource_ptr]
+      topics_array_ptr = FFI::MemoryPointer.new(:pointer)
+      topics_array_ptr.write_array_of_pointer(pointer_array)
+
+      # Get a pointer to the queue that our request will be enqueued on
+      queue_ptr = @native_kafka.with_inner do |inner|
+        Rdkafka::Bindings.rd_kafka_queue_get_background(inner)
+      end
+      if queue_ptr.null?
+        Rdkafka::Bindings.rd_kafka_ConfigResource_destroy(config_resource_ptr)
+        raise Rdkafka::Config::ConfigError.new("rd_kafka_queue_get_background was NULL")
+      end
+
+      # Create and register the handle we will return to the caller
+      alter_config_handle = AlterConfigHandle.new
+      alter_config_handle[:pending] = true
+      alter_config_handle[:response] = -1
+      AlterConfigHandle.register(alter_config_handle)
+
+      admin_options_ptr = @native_kafka.with_inner do |inner|
+        Rdkafka::Bindings.rd_kafka_AdminOptions_new(inner, Rdkafka::Bindings::RD_KAFKA_ADMIN_OP_ALTERCONFIGS)
+      end
+      Rdkafka::Bindings.rd_kafka_AdminOptions_set_opaque(admin_options_ptr, alter_config_handle.to_ptr)
+
+      begin
+        @native_kafka.with_inner do |inner|
+          Rdkafka::Bindings.rd_kafka_AlterConfigs(
+            inner,
+            topics_array_ptr,
+            1,
+            admin_options_ptr,
+            queue_ptr
+          )
+        end
+      rescue Exception
+        DescribeConfigHandle.remove(describe_config_handle.to_ptr.address)
+        raise
+      ensure
+        Rdkafka::Bindings.rd_kafka_AdminOptions_destroy(admin_options_ptr)
+        Rdkafka::Bindings.rd_kafka_queue_destroy(queue_ptr)
+        Rdkafka::Bindings.rd_kafka_ConfigResource_destroy(config_resource_ptr)
+      end
+
+      describe_config_handle
+    end
+
     private
+
     def closed_admin_check(method)
       raise Rdkafka::ClosedAdminError.new(method) if closed?
+    end
+
+    def describe_config(topic_name)
+      closed_admin_check(__method__)
+
+      # Create a configuration resource representing the topic
+      config_resource_ptr = Rdkafka::Bindings.rd_kafka_ConfigResource_new(
+        Rdkafka::Bindings::RD_KAFKA_RESOURCE_TOPIC,
+        FFI::MemoryPointer.from_string(topic_name)
+      )
+
+      # Note that rd_kafka_DescribeConfigs can retrieve multiple configs
+      pointer_array = [config_resource_ptr]
+      topics_array_ptr = FFI::MemoryPointer.new(:pointer)
+      topics_array_ptr.write_array_of_pointer(pointer_array)
+
+      # Get a pointer to the queue that our request will be enqueued on
+      queue_ptr = @native_kafka.with_inner do |inner|
+        Rdkafka::Bindings.rd_kafka_queue_get_background(inner)
+      end
+      if queue_ptr.null?
+        Rdkafka::Bindings.rd_kafka_ConfigResource_destroy(config_resource_ptr)
+        raise Rdkafka::Config::ConfigError.new("rd_kafka_queue_get_background was NULL")
+      end
+
+      # Create and register the handle we will return to the caller
+      describe_config_handle = DescribeConfigHandle.new
+      describe_config_handle[:pending] = true
+      describe_config_handle[:response] = -1
+      DescribeConfigHandle.register(describe_config_handle)
+
+      admin_options_ptr = @native_kafka.with_inner do |inner|
+        Rdkafka::Bindings.rd_kafka_AdminOptions_new(inner, Rdkafka::Bindings::RD_KAFKA_ADMIN_OP_DESCRIBECONFIGS)
+      end
+      Rdkafka::Bindings.rd_kafka_AdminOptions_set_opaque(admin_options_ptr, describe_config_handle.to_ptr)
+
+      begin
+        @native_kafka.with_inner do |inner|
+          Rdkafka::Bindings.rd_kafka_DescribeConfigs(
+            inner,
+            topics_array_ptr,
+            1,
+            admin_options_ptr,
+            queue_ptr
+          )
+        end
+      rescue Exception
+        DescribeConfigHandle.remove(describe_config_handle.to_ptr.address)
+        raise
+      ensure
+        Rdkafka::Bindings.rd_kafka_AdminOptions_destroy(admin_options_ptr)
+        Rdkafka::Bindings.rd_kafka_queue_destroy(queue_ptr)
+        Rdkafka::Bindings.rd_kafka_ConfigResource_destroy(config_resource_ptr)
+      end
+
+      describe_config_handle
     end
   end
 end

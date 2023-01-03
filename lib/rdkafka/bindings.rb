@@ -301,6 +301,24 @@ module Rdkafka
     attach_function :rd_kafka_event_DeleteTopics_result, [:pointer], :pointer, blocking: true
     attach_function :rd_kafka_DeleteTopics_result_topics, [:pointer, :pointer], :pointer, blocking: true
 
+    # Alter Configs
+
+    RD_KAFKA_ADMIN_OP_ALTERCONFIGS = 4
+    RD_KAFKA_EVENT_ALTERCONFIGS_RESULT = 103
+
+    attach_function :rd_kafka_AlterConfigs, [:pointer, :pointer, :size_t, :pointer, :pointer], :void, blocking: true
+    attach_function :rd_kafka_event_AlterConfigs_result, [:pointer], :pointer, blocking: true
+    attach_function :rd_kafka_AlterConfigs_result_resources, [:pointer, :pointer], :pointer, blocking: true
+
+    # Describe Configs
+
+    RD_KAFKA_ADMIN_OP_DESCRIBECONFIGS = 5
+    RD_KAFKA_EVENT_DESCRIBECONFIGS_RESULT = 104
+
+    attach_function :rd_kafka_DescribeConfigs, [:pointer, :pointer, :size_t, :pointer, :pointer], :void, blocking: true
+    attach_function :rd_kafka_event_DescribeConfigs_result, [:pointer], :pointer, blocking: true
+    attach_function :rd_kafka_DescribeConfigs_result_resources, [:pointer, :pointer], :pointer, blocking: true
+
     # Background Queue and Callback
 
     attach_function :rd_kafka_queue_get_background, [:pointer], :pointer
@@ -323,5 +341,17 @@ module Rdkafka
     attach_function :rd_kafka_topic_result_error, [:pointer], :int32
     attach_function :rd_kafka_topic_result_error_string, [:pointer], :pointer
     attach_function :rd_kafka_topic_result_name, [:pointer], :pointer
+
+    # Config Resource
+
+    RD_KAFKA_RESOURCE_TOPIC = 2
+
+    attach_function :rd_kafka_ConfigResource_error, [:pointer], :int32
+    attach_function :rd_kafka_ConfigResource_error_string, [:pointer], :pointer
+    attach_function :rd_kafka_ConfigResource_type, [:pointer], :int32
+    attach_function :rd_kafka_ConfigResource_name, [:pointer], :pointer
+    attach_function :rd_kafka_ConfigResource_new, [:int32, :pointer], :pointer, blocking: true
+    attach_function :rd_kafka_ConfigResource_set_config, [:pointer, :pointer, :pointer], :int32, blocking: true
+    attach_function :rd_kafka_ConfigResource_destroy, [:pointer], :void, blocking: true
   end
 end

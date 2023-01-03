@@ -4,7 +4,7 @@ require "spec_helper"
 require "ostruct"
 
 describe Rdkafka::Admin do
-  let(:config) { rdkafka_config }
+  let(:config) { rdkafka_config(debug: :all) }
   let(:admin)  { config.admin }
 
   after do
@@ -114,6 +114,101 @@ describe Rdkafka::Admin do
       create_topic_report = create_topic_handle.wait(max_wait_timeout: 15.0)
       expect(create_topic_report.error_string).to be_nil
       expect(create_topic_report.result_name).to eq(topic_name)
+    end
+  end
+
+  describe "#incremental_alter_config" do
+    subject(:alter_config_handle) { admin.incremental_alter_config(topic_name, topic_config) }
+
+    describe "called with invalid input" do
+      # https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/internals/Topic.java#L29
+      # public static final String LEGAL_CHARS = "[a-zA-Z0-9._-]";
+      describe "with an invalid topic name" do
+        let(:topic_name) { "[!@#]" }
+
+        it "raises an exception" do
+          expect {
+            alter_config_handle.wait(max_wait_timeout: 15.0)
+          }.to raise_exception { |ex|
+            expect(ex).to be_a(Rdkafka::RdkafkaError)
+            expect(ex.message).to match(/Broker: Invalid topic \(topic_exception\)/)
+            expect(ex.broker_message).to match(/Topic name \"\[!@#\]\" is illegal/)
+          }
+        end
+      end
+
+      describe "with the name of a topic that does not exist" do
+        it "raises an exception" do
+          expect {
+            alter_config_handle.wait(max_wait_timeout: 15.0)
+          }.to raise_exception { |ex|
+            expect(ex).to be_a(Rdkafka::RdkafkaError)
+            expect(ex.message).to match(/Broker: Unknown topic or partition \(unknown_topic_or_part\)/)
+            expect(ex.broker_message).to match(/Broker: Unknown topic or partition/)
+          }
+        end
+      end
+
+      describe "with an invalid topic configuration" do
+        let(:topic_config) { invalid_topic_config }
+
+        it "doesn't create the topic" do
+          expect {
+            alter_config_handle.wait(max_wait_timeout: 15.0)
+          }.to raise_error Rdkafka::RdkafkaError, /Broker: Configuration is invalid \(invalid_config\)/
+        end
+      end
+    end
+
+    context "edge case" do
+      context "where we are unable to get the background queue" do
+        before do
+          allow(Rdkafka::Bindings).to receive(:rd_kafka_queue_get_background).and_return(FFI::Pointer::NULL)
+        end
+
+        it "raises an exception" do
+          expect {
+            alter_config_handle
+          }.to raise_error Rdkafka::Config::ConfigError, /rd_kafka_queue_get_background was NULL/
+        end
+      end
+
+      context "where rd_kafka_DescribeConfigs raises an exception" do
+        before do
+          allow(Rdkafka::Bindings).to receive(:rd_kafka_DescribeConfigs).and_raise(RuntimeError.new("oops"))
+        end
+
+        it "raises an exception" do
+          expect {
+            alter_config_handle
+          }.to raise_error RuntimeError, /oops/
+        end
+      end
+
+      context "where rd_kafka_AlterConfigs raises an exception" do
+        before do
+          allow(Rdkafka::Bindings).to receive(:rd_kafka_AlterConfigs).and_raise(RuntimeError.new("oops"))
+        end
+
+        it "raises an exception" do
+          expect {
+            alter_config_handle
+          }.to raise_error RuntimeError, /oops/
+        end
+      end
+    end
+
+    it "alters the config for a topic that was newly created" do
+      create_topic_handle = admin.create_topic(topic_name, topic_partition_count, topic_replication_factor)
+      create_topic_report = create_topic_handle.wait(max_wait_timeout: 15.0)
+      expect(create_topic_report.error_string).to be_nil
+      expect(create_topic_report.result_name).to eq(topic_name)
+
+      alter_config_report = alter_config_handle.wait(max_wait_timeout: 15.0)
+
+      expect(alter_config_report.error_string).to be_nil
+      expect(alter_config_report.resource_type).to eq(:topic)
+      expect(alter_config_report.resource_name).to eq(topic_name)
     end
   end
 

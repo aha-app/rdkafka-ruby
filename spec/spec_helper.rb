@@ -72,6 +72,10 @@ def new_native_topic(topic_name="topic_name", native_client: )
   )
 end
 
+def new_native_config_resource(name: "topic_name", type: Rdkafka::Bindings::RD_KAFKA_RESOURCE_TOPIC)
+  Rdkafka::Bindings.rd_kafka_ConfigResource_new(type, FFI::MemoryPointer.from_string(topic_name))
+end
+
 def wait_for_message(topic:, delivery_report:, timeout_in_seconds: 30, consumer: nil)
   new_consumer = !!consumer
   consumer ||= rdkafka_consumer_config.consumer

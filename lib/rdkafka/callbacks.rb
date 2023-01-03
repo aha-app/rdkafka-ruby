@@ -23,6 +23,26 @@ module Rdkafka
       end
     end
 
+    class ConfigResource
+      attr_reader :error, :error_string, :resource_type, :resource_name, :resource_pointer
+
+      def initialize(config_resource_pointer)
+        @error = Rdkafka::Bindings.rd_kafka_ConfigResource_error(config_resource_pointer)
+        @error_string = Rdkafka::Bindings.rd_kafka_ConfigResource_error_string(config_resource_pointer)
+        @resource_type = Rdkafka::Bindings.rd_kafka_ConfigResource_type(config_resource_pointer)
+        @resource_name = Rdkafka::Bindings.rd_kafka_ConfigResource_name(config_resource_pointer)
+        @resource_pointer = config_resource_pointer
+      end
+
+      def self.create_config_resources_from_array(count, array_pointer)
+        (1..count).map do |index|
+          result_pointer = (array_pointer + (index - 1)).read_pointer
+          new(result_pointer)
+        end
+      end
+    end
+
+    # Extracts attributs of a rd_kafka_
     # FFI Function used for Create Topic and Delete Topic callbacks
     BackgroundEventCallbackFunction = FFI::Function.new(
         :void, [:pointer, :pointer, :pointer]
@@ -38,6 +58,10 @@ module Rdkafka
           process_create_topic(event_ptr)
         elsif event_type == Rdkafka::Bindings::RD_KAFKA_EVENT_DELETETOPICS_RESULT
           process_delete_topic(event_ptr)
+        elsif event_type == Rdkafka::Bindings::RD_KAFKA_EVENT_DESCRIBECONFIGS_RESULT
+          process_describe_config(event_ptr)
+        elsif event_type == Rdkafka::Bindings::RD_KAFKA_EVENT_ALTERCONFIGS_RESULT
+          process_alter_config(event_ptr)
         end
       end
 
@@ -74,6 +98,43 @@ module Rdkafka
           delete_topic_handle[:error_string] = delete_topic_results[0].error_string
           delete_topic_handle[:result_name] = delete_topic_results[0].result_name
           delete_topic_handle[:pending] = false
+        end
+      end
+
+      def self.process_describe_config(event_ptr)
+        describe_configs_result = Rdkafka::Bindings.rd_kafka_event_DescribeConfigs_result(event_ptr)
+
+        # Get the number of results
+        pointer_to_size_t = FFI::MemoryPointer.new(:int32)
+        describe_config_result_array = Rdkafka::Bindings.rd_kafka_DescribeConfigs_result_resources(describe_configs_result, pointer_to_size_t)
+        describe_config_results = ConfigResource.create_config_resources_from_array(pointer_to_size_t.read_int, describe_config_result_array)
+        describe_config_handle_ptr = Rdkafka::Bindings.rd_kafka_event_opaque(event_ptr)
+
+        if describe_config_handle = Rdkafka::Admin::DescribeConfigHandle.remove(describe_config_handle_ptr.address)
+          describe_config_handle[:response] = describe_config_results[0].error
+          describe_config_handle[:error_string] = describe_config_results[0].error_string
+          describe_config_handle[:resource_name] = describe_config_results[0].resource_name
+          describe_config_handle[:resource_type] = describe_config_results[0].resource_type
+          describe_config_handle[:resource] = describe_config_results[0].resource_pointer
+          describe_config_handle[:pending] = false
+        end
+      end
+
+      def self.process_alter_config(event_ptr)
+        alter_configs_result = Rdkafka::Bindings.rd_kafka_event_AlterConfigs_result(event_ptr)
+
+        # Get the number of results
+        pointer_to_size_t = FFI::MemoryPointer.new(:int32)
+        alter_config_result_array = Rdkafka::Bindings.rd_kafka_DescribeConfigs_result_resources(alter_configs_result, pointer_to_size_t)
+        alter_config_results = ConfigResource.create_config_resources_from_array(pointer_to_size_t.read_int, alter_config_result_array)
+        alter_config_handle_ptr = Rdkafka::Bindings.rd_kafka_event_opaque(event_ptr)
+
+        if alter_config_handle = Rdkafka::Admin::DescribeConfigHandle.remove(alter_config_handle_ptr.address)
+          alter_config_handle[:response] = alter_config_results[0].result_error
+          alter_config_handle[:error_string] = alter_config_results[0].error_string
+          alter_config_handle[:resource_name] = alter_config_results[0].resource_name
+          alter_config_handle[:resource_type] = alter_config_results[0].resource_type
+          alter_config_handle[:pending] = false
         end
       end
     end
